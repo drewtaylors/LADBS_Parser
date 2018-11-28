@@ -1,5 +1,6 @@
+from __future__ import print_function
+import sys
 import csv
-import time
 from selenium.common.exceptions import *
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -9,19 +10,37 @@ RECORD_BOOK = 'records.csv'
 
 addresses = []
 record_collection = []
+console = {
+    'total_addresses': 0,
+    'addresses_searched': 0,
+    'no_results': 0,
+    'total_records': 0,
+}
 
+def update_console(field):
+    console[field] += 1
+    sys.stdout.flush()
+    print('Addresses Searched: ' + str(console['addresses_searched']) 
+            + '/' + str(console['total_addresses']) + ', '
+            + 'No Records: ' + str(console['no_results']) + ', '
+            + 'Total Records: ' + str(console['total_records']), end='\r')
+
+
+# Fill list with addresses from .csv file (will start at index 0)
 with open(ADDRESS_BOOK, 'rb') as address_book:
     reader = csv.reader(address_book)
     for row in reader:
         addresses.append(row[0])
-
+console['total_addresses'] = len(addresses)
+        
+# Initiate browser
 driver = webdriver.Chrome()
 
 for address in addresses:
-
+    # Go to website
     driver.get('http://ladbsdoc.lacity.org/IDISPublic_Records/idis/DefaultCustom.aspx')
-    assert 'Document Search Selection' in driver.title
 
+    # Go to address search, repeatedly try if session failure
     elem = driver.find_element_by_id('lnkBtnAddress')
     elem.click()
     while ('Document Search' not in driver.title):
@@ -29,22 +48,24 @@ for address in addresses:
         elem = driver.find_element_by_id('lnkBtnAddress')
         elem.click()
 
+    # Search for address in DB
     elem = driver.find_element_by_name('Address$txtAddress')
     elem.send_keys(address)
     elem.send_keys(Keys.RETURN)
+    update_console('addresses_searched')
 
+    # Look for table of docs on page, if none then address has no search results
     try:
         table = driver.find_element_by_id('dgAddress1')
-        print('dgAddress1')
     except NoSuchElementException:
         table = driver.find_element_by_id('grdIdisResult')
-        print('grdIdisResult')
     except UnexpectedAlertPresentException:
-        print('no records found')
         alert = driver.switch_to.alert
         alert.accept()
+        update_console('no_results')
         continue
 
+    # Parse through table and append results to record_collection
     rows = table.find_elements_by_tag_name('tr')
 
     for row in rows[1:]:
@@ -55,14 +76,18 @@ for address in addresses:
             record.append(elem.text)
 
         record_collection.append(record)
+        update_console('total_records')
 
-with open(RECORD_BOOK, 'wb') as record_book:
-    writer = csv.writer(record_book)
-    for i in record_collection:
-        print i
-        writer.writerow(i)
-
+# Close web browser
 driver.close()
 
+# Write records into new .csv file
+with open(RECORD_BOOK, 'wb') as record_book:
+    writer = csv.writer(record_book)
+    for rec in record_collection:
+        writer.writerow(rec)
 
-
+print('Addresses Searched: ' + str(console['addresses_searched']) 
+            + '/' + str(console['total_addresses']) + ', '
+            + 'No Records: ' + str(console['no_results']) + ', '
+            + 'Total Records: ' + str(console['total_records']))

@@ -45,7 +45,7 @@ with open(ADDRESS_BOOK, 'rb') as address_book:
 console['total_addresses'] = len(addresses)
         
 # Initiate browser
-driver = webdriver.Chrome()
+driver = webdriver.Chrome('chromedriver')
 
 for address in addresses:
     # Go to website

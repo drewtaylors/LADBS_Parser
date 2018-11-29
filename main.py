@@ -1,6 +1,7 @@
 from __future__ import print_function
 import sys
 import csv
+import os
 from selenium.common.exceptions import *
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -45,7 +46,7 @@ with open(ADDRESS_BOOK, 'rb') as address_book:
 console['total_addresses'] = len(addresses)
         
 # Initiate browser
-driver = webdriver.Chrome('chromedriver')
+driver = webdriver.Chrome(os.getcwd()+'/chromedriver')
 
 for address in addresses:
     # Go to website

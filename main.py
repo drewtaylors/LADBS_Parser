@@ -5,7 +5,7 @@ from selenium.common.exceptions import *
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 
-ADDRESS_BOOK = 'sample.csv'
+ADDRESS_BOOK = 'ladbs_address_block.csv'
 RECORD_BOOK = 'records.csv'
 
 addresses = []
@@ -25,6 +25,17 @@ def update_console(field):
             + 'No Records: ' + str(console['no_results']) + ', '
             + 'Total Records: ' + str(console['total_records']), end='\r')
 
+# Read filenames if none use defaults
+input_file = raw_input('Please enter an input filename (.csv): ')
+output_file = raw_input('Please enter an output filename (.csv): ')
+if '.csv' in input_file:
+    ADDRESS_BOOK = input_file
+else:
+    print('Using default input file - ', str(ADDRESS_BOOK))
+if '.csv' in output_file:
+    RECORD_BOOK = output_file
+else:
+    print('Using default output file - ', str(RECORD_BOOK))
 
 # Fill list with addresses from .csv file (will start at index 0)
 with open(ADDRESS_BOOK, 'rb') as address_book:
@@ -50,7 +61,7 @@ for address in addresses:
 
     # Search for address in DB
     elem = driver.find_element_by_name('Address$txtAddress')
-    elem.send_keys(address)
+    elem.send_keys(str(address))
     elem.send_keys(Keys.RETURN)
     update_console('addresses_searched')
 

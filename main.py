@@ -6,7 +6,7 @@ from selenium.common.exceptions import *
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 
-ADDRESS_BOOK = 'ladbs_address_block.csv'
+ADDRESS_BOOK = 'sample.csv'
 RECORD_BOOK = 'records.csv'
 
 addresses = []
@@ -18,6 +18,7 @@ console = {
     'total_records': 0,
 }
 
+
 def update_console(field):
     console[field] += 1
     sys.stdout.flush()
@@ -25,6 +26,37 @@ def update_console(field):
             + '/' + str(console['total_addresses']) + ', '
             + 'No Records: ' + str(console['no_results']) + ', '
             + 'Total Records: ' + str(console['total_records']), end='\r')
+
+
+def expand_records(address):
+    # select all addresses
+    while True:
+        table = driver.find_element_by_id('grdIdisResult')
+
+        # Parse through table and append results to record_collection
+        rows = table.find_elements_by_tag_name('tr')
+
+        for row in rows[1:]:
+            record = [address]
+            elems = row.find_elements_by_tag_name('td')
+
+            for elem in elems[1:]:
+                record.append(elem.text)
+
+            record_collection.append(record)
+            update_console('total_records')
+
+        try:
+            indexes = driver.find_element_by_id('pnlNavigate')
+            current_index = int(indexes.find_element_by_css_selector('font').text)
+            if current_index % 10 != 0:
+                driver.execute_script("goPage('" + str(current_index+1) + "')")
+            else:
+                driver.execute_script("goPage('" + str(current_index+1) + "N')")
+        # Reached the end of the loop
+        except NoSuchElementException:
+            break    
+
 
 # Read filenames if none use defaults
 input_file = raw_input('Please enter an input filename (.csv): ')
@@ -53,8 +85,9 @@ for address in addresses:
     driver.get('http://ladbsdoc.lacity.org/IDISPublic_Records/idis/DefaultCustom.aspx')
 
     # Go to address search, repeatedly try if session failure
-    elem = driver.find_element_by_id('lnkBtnAddress')
-    elem.click()
+    elem = driver.find_element_by_id('lnkBtnAddress').click()
+
+    # put this into a function
     while ('Document Search' not in driver.title):
         driver.get('http://ladbsdoc.lacity.org/IDISPublic_Records/idis/DefaultCustom.aspx')
         elem = driver.find_element_by_id('lnkBtnAddress')
@@ -67,28 +100,19 @@ for address in addresses:
     update_console('addresses_searched')
 
     # Look for table of docs on page, if none then address has no search results
+    # if driver.find_element_by_id == dgAddress1, need to parse further
     try:
         table = driver.find_element_by_id('dgAddress1')
+        checkbox = driver.find_element_by_name('chkAddress1All').click()
+        continue_button = driver.find_element_by_name('btnNext3').click()
+        expand_records(address) 
     except NoSuchElementException:
-        table = driver.find_element_by_id('grdIdisResult')
+        expand_records(address)
     except UnexpectedAlertPresentException:
         alert = driver.switch_to.alert
         alert.accept()
         update_console('no_results')
         continue
-
-    # Parse through table and append results to record_collection
-    rows = table.find_elements_by_tag_name('tr')
-
-    for row in rows[1:]:
-        record = [address]
-        elems = row.find_elements_by_tag_name('td')
-
-        for elem in elems[1:]:
-            record.append(elem.text)
-
-        record_collection.append(record)
-        update_console('total_records')
 
 # Close web browser
 driver.close()

@@ -31,7 +31,11 @@ def update_console(field):
 def expand_records(address):
     # select all addresses
     while True:
-        table = driver.find_element_by_id('grdIdisResult')
+        try:
+            table = driver.find_element_by_id('grdIdisResult')
+        except NoSuchElementException:
+            update_console('no_results')
+            break
 
         # Parse through table and append results to record_collection
         rows = table.find_elements_by_tag_name('tr')

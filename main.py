@@ -5,125 +5,165 @@ import os
 from selenium.common.exceptions import *
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
+from multiprocessing import Pool, cpu_count
 
-ADDRESS_BOOK = 'sample.csv'
-RECORD_BOOK = 'records.csv'
+def run_parallel_selenium_processes(datalist, selenium_func):
+    pool = Pool()
 
-addresses = []
-record_collection = []
-console = {
-    'total_addresses': 0,
-    'addresses_searched': 0,
-    'no_results': 0,
-    'total_records': 0,
-}
+    # max number of parallel process
+    ITERATION_COUNT = cpu_count()-1
 
+    count_per_iteration = len(datalist) / float(ITERATION_COUNT)
 
-def update_console(field):
-    console[field] += 1
-    sys.stdout.flush()
-    print('Addresses Searched: ' + str(console['addresses_searched']) 
-            + '/' + str(console['total_addresses']) + ', '
-            + 'No Records: ' + str(console['no_results']) + ', '
-            + 'Total Records: ' + str(console['total_records']), end='\r')
+    for i in range(0, ITERATION_COUNT):
+        list_start = int(count_per_iteration * i)
+        list_end = int(count_per_iteration * (i+1))
+        pool.apply_async(selenium_func, [datalist[list_start:list_end]])
 
+class LADBS_Parser:
 
-def expand_records(address):
-    # select all addresses
-    while True:
-        table = driver.find_element_by_id('grdIdisResult')
+    # Class variables
+    addresses = []
+    record_collection = []
+    total_addresses = 0
+    addresses_searched = 0
+    no_results = 0
+    total_records = 0
 
-        # Parse through table and append results to record_collection
-        rows = table.find_elements_by_tag_name('tr')
+    def __init__(self, address_book='sample.csv', 
+                    record_book='records.csv', 
+                    multiprocess=False):
+        if '.csv' in address_book:
+            self.address_book = address_book
+        else:
+            print('Please enter a valid input file (.csv)')
+        if '.csv' in record_book:
+            self.record_book = record_book
+        else:
+            print('Please enter a valid output file (.csv')
+        self.multiprocess =  multiprocess
 
-        for row in rows[1:]:
-            record = [address]
-            elems = row.find_elements_by_tag_name('td')
-
-            for elem in elems[1:]:
-                record.append(elem.text)
-
-            record_collection.append(record)
-            update_console('total_records')
-
-        try:
-            indexes = driver.find_element_by_id('pnlNavigate')
-            current_index = int(indexes.find_element_by_css_selector('font').text)
-            if current_index % 10 != 0:
-                driver.execute_script("goPage('" + str(current_index+1) + "')")
-            else:
-                driver.execute_script("goPage('" + str(current_index+1) + "N')")
-        # Reached the end of the loop
-        except NoSuchElementException:
-            break    
-
-
-# Read filenames if none use defaults
-input_file = raw_input('Please enter an input filename (.csv): ')
-output_file = raw_input('Please enter an output filename (.csv): ')
-if '.csv' in input_file:
-    ADDRESS_BOOK = input_file
-else:
-    print('Using default input file - ', str(ADDRESS_BOOK))
-if '.csv' in output_file:
-    RECORD_BOOK = output_file
-else:
-    print('Using default output file - ', str(RECORD_BOOK))
-
-# Fill list with addresses from .csv file (will start at index 0)
-with open(ADDRESS_BOOK, 'rb') as address_book:
-    reader = csv.reader(address_book)
-    for row in reader:
-        addresses.append(row[0])
-console['total_addresses'] = len(addresses)
+        # Fill list with addresses from .csv file (will start at index 0)
+        with open(self.address_book, 'rb') as ab:
+            reader = csv.reader(ab)
+            for row in reader:
+                self.addresses.append(row[0])
+        self.total_addresses = len(self.addresses)
         
-# Initiate browser
-driver = webdriver.Chrome(os.getcwd()+'/chromedriver')
+    def start(self):
+        if self.multiprocess:
+            self.record_collection.append(self.multiprocess_parse())
+        else:
+            self.record_collection = self.singleprocess_parse(self.addresses)
 
-for address in addresses:
-    # Go to website
-    driver.get('http://ladbsdoc.lacity.org/IDISPublic_Records/idis/DefaultCustom.aspx')
+        # Write records into new .csv file
+        with open(self.record_book, 'wb') as rb:
+            writer = csv.writer(rb)
+            for rec in self.record_collection:
+                writer.writerow(rec)
 
-    # Go to address search, repeatedly try if session failure
-    elem = driver.find_element_by_id('lnkBtnAddress').click()
+        print('Addresses Searched: ' + str(addresses_searched) 
+                + '/' + str(total_addresses) + ', '
+                + 'No Records: ' + str(no_results) + ', '
+                + 'Total Records: ' + str(total_records))
 
-    # put this into a function
-    while ('Document Search' not in driver.title):
-        driver.get('http://ladbsdoc.lacity.org/IDISPublic_Records/idis/DefaultCustom.aspx')
-        elem = driver.find_element_by_id('lnkBtnAddress')
-        elem.click()
+    def singleprocess_parse(self, addresses):
+        # Initiate browser
+        driver = webdriver.Chrome(os.getcwd()+'/chromedriver')
+        records = []
 
-    # Search for address in DB
-    elem = driver.find_element_by_name('Address$txtAddress')
-    elem.send_keys(str(address))
-    elem.send_keys(Keys.RETURN)
-    update_console('addresses_searched')
+        for address in addresses:
+            # Go to website
+            driver.get('http://ladbsdoc.lacity.org/IDISPublic_Records/idis/DefaultCustom.aspx')
 
-    # Look for table of docs on page, if none then address has no search results
-    # if driver.find_element_by_id == dgAddress1, need to parse further
-    try:
-        table = driver.find_element_by_id('dgAddress1')
-        checkbox = driver.find_element_by_name('chkAddress1All').click()
-        continue_button = driver.find_element_by_name('btnNext3').click()
-        expand_records(address) 
-    except NoSuchElementException:
-        expand_records(address)
-    except UnexpectedAlertPresentException:
-        alert = driver.switch_to.alert
-        alert.accept()
-        update_console('no_results')
-        continue
+            # Go to address search, repeatedly try if session failure
+            elem = driver.find_element_by_id('lnkBtnAddress').click()
 
-# Close web browser
-driver.close()
+            # put this into a function
+            while ('Document Search' not in driver.title):
+                driver.get('http://ladbsdoc.lacity.org/IDISPublic_Records/idis/DefaultCustom.aspx')
+                elem = driver.find_element_by_id('lnkBtnAddress').click()
 
-# Write records into new .csv file
-with open(RECORD_BOOK, 'wb') as record_book:
-    writer = csv.writer(record_book)
-    for rec in record_collection:
-        writer.writerow(rec)
+            # Search for address in DB
+            elem = driver.find_element_by_name('Address$txtAddress')
+            elem.send_keys(str(address))
+            elem.send_keys(Keys.RETURN)
+            self.update_record_data(self.addresses_searched)
 
-print('Addresses Searched: ' + str(console['addresses_searched']) 
-            + '/' + str(console['total_addresses']) + ', '
-            + 'No Records: ' + str(console['no_results']) + ', '
-            + 'Total Records: ' + str(console['total_records']))
+            # Look for table of docs on page, if none then address has no search results
+            # if driver.find_element_by_id == dgAddress1, need to parse further
+            try:
+                table = driver.find_element_by_id('dgAddress1')
+                driver.find_element_by_name('chkAddress1All').click()
+                driver.find_element_by_name('btnNext3').click()
+                self.expand_records(driver, records, address) 
+            except NoSuchElementException:
+                self.expand_records(driver, records, address)
+            except UnexpectedAlertPresentException:
+                alert = driver.switch_to.alert
+                alert.accept()
+                self.update_record_data(self.no_results)
+                continue
+
+        # Close web browser
+        driver.close()
+
+        return records
+
+    def multiprocess_parse(self):
+        print('hi')
+        return 0
+
+    def update_record_data(self, field):
+        field += 1
+        sys.stdout.flush()
+        print('Addresses Searched: ' + str(self.addresses_searched) 
+                + '/' + str(self.total_addresses) + ', '
+                + 'No Records: ' + str(self.no_results) + ', '
+                + 'Total Records: ' + str(self.total_records), end='\r')
+
+    def expand_records(self, driver, records, address):
+        # select all addresses
+        while True:
+            table = driver.find_element_by_id('grdIdisResult')
+
+            # Parse through table and append results to record_collection
+            rows = table.find_elements_by_tag_name('tr')
+
+            for row in rows[1:]:
+                record = [address]
+                elems = row.find_elements_by_tag_name('td')
+
+                for elem in elems[1:]:
+                    record.append(elem.text)
+
+                records.append(record)
+                self.update_record_data(self.total_records)
+
+            try:
+                indexes = driver.find_element_by_id('pnlNavigate')
+                current_index = int(indexes.find_element_by_css_selector('font').text)
+                if current_index % 10 != 0:
+                    driver.execute_script("goPage('" + str(current_index+1) + "')")
+                else:
+                    driver.execute_script("goPage('" + str(current_index+1) + "N')")
+            # Reached the end of the loop
+            except NoSuchElementException:
+                break    
+
+if __name__ == '__main__':
+
+    # Read filenames for input and output files
+    input_file = raw_input('Please enter an input filename (.csv): ')
+    output_file = raw_input('Please enter an output filename (.csv): ')
+
+    if input_file == '' and output_file == '':
+        parser = LADBS_Parser()
+    elif input_file == '' and output_file:
+        parser = LADBS_Parser(record_book=output_file)
+    elif input_file and output_file == '':
+        parser = LADBS_Parser(address_book=input_file)
+    else:
+        parser = LADBS_Parser(input_file, output_file)
+    
+    parser.start()
